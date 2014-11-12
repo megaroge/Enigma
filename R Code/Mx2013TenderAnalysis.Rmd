@@ -3,6 +3,8 @@ title: "Mx 2013 Tender Analysis"
 author: Jerry Megaro
 output: html_document  
 
+
+Hi there, today is Nov-13th
 ---
 
 This document used the Mexico 2013 csv spreadsheet as the basis for analysis
