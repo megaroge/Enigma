@@ -1,0 +1,183 @@
+---
+title: "Mx 2013 Tender Analysis"
+author: Jerry Megaro
+output: html_document  
+
+---
+
+This document used the Mexico 2013 csv spreadsheet as the basis for analysis
+
+
+```{r, echo=FALSE}
+# Set up the environment
+#     - Clean & Load Libraries
+# ----
+rm(list=ls())
+suppressMessages(library(dplyr))
+library(tidyr)
+library(lubridate)
+library(stringr)
+library(ggplot2)
+#library(ggdendro)
+#library(Unicode)
+#library(data.table) # Note that this package will mask lubridate functions.
+#
+# This is how you unload a package
+# detach("package:data.table", unload = TRUE)
+
+# Globaly suppress waring messages
+# options(warn = -1)
+# ----
+
+#
+# Set-up variables
+# ----
+dir <- "/Users/megaroge/Documents/Data Science/Data Sets/Enigma/"
+file1 <- "Clean Tender 2013 Data2.csv" 
+file2 <- "Tender Meta Data.csv"
+dir_file1 <- paste(dir, file1, sep="")
+dir_file2 <- paste(dir, file2, sep="")
+#
+# Read data
+# ---------
+dat <-  read.csv(dir_file1, header = TRUE, sep = ",", stringsAsFactors = FALSE)
+te_dat2 <- read.csv(dir_file2, header = TRUE, sep = ",", stringsAsFactors = FALSE)
+
+#
+# Mutate dat and convert the Economic.Opening from characters to a Date
+# Mutate dat and extract Month from the Date column
+# ---------
+dat <- mutate(dat, Date = dmy(dat$Economic.Opening))
+dat <- mutate(dat, Month = month(Date, label = TRUE, abbr = FALSE))
+
+#
+# Clean some data columns
+# --------
+dat$Event.ID <- str_replace_all(str_trim(dat$Event.ID), pattern="[^a-zA-Z0-9]", repl="-")
+dat$Event.ID <- str_replace_all(dat$Event.ID, pattern="\\-{2}", repl="-")
+dat$Event.ID <- str_replace_all(dat$Event.ID, pattern="-$", repl="")
+dat$Product <- str_replace_all(toupper(str_trim(dat$Product)), pattern=" ", repl="")
+dat$Customer <- str_trim(dat$Customer)
+#
+# Remove all non-standard Characters
+dat$Assigned.Distributor <- toupper(str_replace_all(str_trim(dat$Assigned.Distributor),
+                                            pattern="[^a-zA-Z]", repl=" "))
+# 
+# Remove two or more white spaces
+dat$Assigned.Distributor <- gsub("\\s{2}","",dat$Assigned.Distributor)
+#
+# Replace all "F " with "F"
+dat$Assigned.Distributor <- gsub("F\\s","F", dat$Assigned.Distributor)
+
+# Extract needed columns
+#
+# ---------
+working_dat <- select(dat, Product, 
+                      Event.ID, Assigned.Distributor, 
+                      Total.Allocated.Internal.Sale, 
+                      Month, Tender.Won)
+working_dat$ItemCount <- rep(1, NROW(working_dat))
+
+#
+# Test of the data.table package to aggregate data
+# library(data.table) # Note that this package will mask lubridate functions.
+
+#
+# This is how you unload a package
+# detach("package:data.table", unload = TRUE)
+
+```
+
+```{r, echo=FALSE}
+# Repots 
+#
+#       - sales by product and month
+#       - total tenders by month
+#       - total tenders by month by product
+# ---------
+sales_by_prod_month <- aggregate(Total.Allocated.Internal.Sale ~ Product + Month, 
+                                 sum, 
+                                 data = filter(working_dat, Tender.Won == 1))
+
+dir_file <- paste(dir,"Mx 2013 Product Data.csv", sep="")
+# write.table(sales_by_prod_month, file=dir_file, sep=",")
+
+# 
+# ----
+total_tenders_by_month_won_lost <- aggregate(ItemCount ~ Product + Month + Tender.Won,
+                                    sum,
+                                    data = working_dat)
+
+dir_file <- paste(dir,"Mx 2013 Product By Month Won or Lost.csv", sep=",")
+# write.table(total_tenders_by_month_won_lost, file= dir_file, sep=",")
+
+#
+# ----
+total_tenders_by_month <- aggregate(ItemCount ~ Month + Tender.Won,
+                                    sum,
+                                    data = distinct(working_dat, Event.ID))
+
+dir_file <- paste(dir,"Mx 2013 Total Unique Tenders by Month.csv", sep=",")
+# write.table(total_tenders_by_month, file=dir_file, sep=",")
+
+
+#
+# ----
+by_distributor <- aggregate(ItemCount ~ Assigned.Distributor + 
+                              Month + 
+                              Tender.Won + 
+                              Product,
+                            sum,
+                            data = working_dat)
+
+#
+# Look for common tender ids across the tender engine and the Mexico spreadsheet.
+intersect(working_dat$Event.ID, te_dat2$tender_id)
+
+working_dat[grep("RENITEC", working_dat$Product), "Product"]
+
+names(working_dat)[4] <- "Val"
+names(working_dat)
+```
+
+General Reports
+
+```{r, fig.height=8, fig.width=13}
+
+# Plot the data of interest
+#       - SINGULAIR
+#       - TEMODAL
+#       - OTROS-RENITEC
+#       - OTROS-CORENITEC
+#       - TIENAM
+#       - ONICIT
+#       - TEMGESIC
+
+
+sub_dat <- filter(working_dat,
+                   Product == "SINGULAIR" | 
+                   Product == "TEMODAL"  | 
+                   Product == "OTROS-RENITEC" |
+                   Product == "OTROS-CORENITEC" | 
+                   Product == "TIENAM" |
+                   Product == "ONICIT" |
+                   Product == "TEMGESIC")
+p <- ggplot(sub_dat, aes(x=Month, y = Val, fill = Product))
+p + geom_bar(stat = "identity", postition = "dodge") + scale_x_discrete() 
+
+# ans <- aggregate(ItemCount ~ Product + Month, sum, data = filter(sub_dat, 
+#                                                          Month >= 8 & 
+#                                                            Month <= 10 & 
+#                                                            Product == "OTROS-CORENITEC" & 
+#                                                            Tender.Won == 1))
+
+
+g <- ggplot(filter(working_dat, Tender.Won == 1,
+                   Product == "SINGULAIR" |
+                   Product == "TEMODAL"   |
+                   Product == "ONICIT"   ), 
+            aes(y= Val, x= Assigned.Distributor)) 
+g <- g + geom_bar(stat= "identity", aes(fill=Product))   +  facet_grid(. ~ Month)
+g <- g + theme(axis.text.x =  element_text(angle = 90, hjust = 1)) + scale_y_log10()
+g
+```
